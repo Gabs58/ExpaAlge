@@ -110,25 +110,45 @@ class ExpanderGUI:
         self.latex_canvas_label.config(image=photo)
         self.latex_canvas_label.image = photo
 
-    def process_manual_expression(self):
-        expression = self.expression_var.get().strip()  # Obtiene la expresión ingresada
+  def process_manual_expression(self):
+    import threading
+    from utils import get_expression_complexity
+
+    def worker():
+        expression = self.expression_var.get().strip()
         if not expression:
-            messagebox.showwarning("Advertencia", ERROR_MESSAGES['no_expression'])
+            self.root.after(0, lambda: messagebox.showwarning("Advertencia", ERROR_MESSAGES['no_expression']))
             return
-        is_latex = self.latex_input_var.get()  # Determina si la entrada es LaTeX
-        self.update_status("Procesando expresión...")
-        # Llama al método centralizado de Expander
+
+        # --- Cálculo de complejidad ---
+        metrics = get_expression_complexity(expression)
+        score = metrics['complexity_score']
+
+        if score > 80:
+            self.root.after(0, lambda: messagebox.showwarning(
+                "Expresión demasiado compleja",
+                f"La expresión tiene una puntuación de complejidad de {score:.1f}.\n"
+                "Esto puede hacer que el cálculo sea muy lento o incluso que la aplicación se bloquee.\n"
+                "Te sugerimos simplificar la expresión antes de continuar."
+            ))
+            return  # Detiene el proceso si la expresión es muy compleja
+
+        is_latex = self.latex_input_var.get()
+        self.root.after(0, lambda: self.update_status("Procesando expresión..."))
         result = Expander.process_expression(expression, is_latex)
         if result["success"]:
             self.current_expression = result
-            self.add_result("EXPRESIÓN ORIGINAL", result['original'])
-            self.add_result("EXPRESIÓN EXPANDIDA", result['expanded'])
-            self.add_result("LATEX EXPANDIDA", result['expanded_latex'])
-            self.render_latex_image(result['expanded_latex'])
-            self.update_status("Procesamiento completado")
+            self.root.after(0, lambda: self.add_result("EXPRESIÓN ORIGINAL", result['original']))
+            self.root.after(0, lambda: self.add_result("EXPRESIÓN EXPANDIDA", result['expanded']))
+            self.root.after(0, lambda: self.add_result("LATEX EXPANDIDA", result['expanded_latex']))
+            self.root.after(0, lambda: self.render_latex_image(result['expanded_latex']))
+            self.root.after(0, lambda: self.update_status("Procesamiento completado"))
         else:
-            self.update_status(f"Error: {result['error']}")
-            messagebox.showerror("Error", f"Error al procesar la expresión:\n{result['error']}")
+            self.root.after(0, lambda: self.update_status(f"Error: {result['error']}"))
+            self.root.after(0, lambda: messagebox.showerror("Error", f"Error al procesar la expresión:\n{result['error']}"))
+
+    # Lanza el worker en un hilo secundario
+    threading.Thread(target=worker).start()
 
     def clear_results(self):
         """
